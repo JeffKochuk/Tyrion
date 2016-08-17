@@ -91,6 +91,7 @@ Meteor.methods({
     //     2) Insert the initial data into the collection
     //
     getSchemaAndFirstData: (input) => {
+        console.log(input);
         // First, confirm that the form exists
         // formDataURI:
         //     elements: [
@@ -101,8 +102,8 @@ Meteor.methods({
         input.type = 'formData';
         input.date = new Date();
         Logs.insert(input);
-        minDate = minDate.valueOf() / 1000;
-        maxDate = maxDate.valueOf() / 1000;
+        minDate = minDate ? minDate.valueOf() / 1000 : undefined;
+        maxDate = maxDate ? maxDate.valueOf() / 1000 : undefined;
 
         const rawSchema = fetch(`${formSchemaURI}${formID}`, EloquaOptions)
             .then(res => res.json())
@@ -140,6 +141,8 @@ Meteor.methods({
     // ASSUMPTION: data is inserted at the end
     // returns the total field from eloqua
     pollingRefreshData: (input) => {
+        console.log('PollingRefreshData');
+        console.log(input);
         let { formID, minDate, maxDate } = input;
         let query = `${formDataURI}${formID}?`;
         if (minDate) {

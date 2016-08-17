@@ -15,6 +15,7 @@ export default class TyrionPage extends Component {
 
     // Bind non-static functions
     this.handleSubmit = this.handleSubmit.bind(this);
+    this.handleSelect = this.handleSelect.bind(this);
     this.pollData = this.pollData.bind(this);
   }
   
@@ -22,35 +23,37 @@ export default class TyrionPage extends Component {
     console.log('looking up ' + formState.formID);
     console.log(formState);
     this.setState({ loading: true});
-    
-    if (parseInt(formState.formID)) { // If a number was passed, treat it as a Form ID
-      Meteor.call('getSchemaAndFirstData', formState, (err, res) => {
-        if (err) {
-          Bert.alert(err.error, 'danger', 'growl-top-right');
-          this.setState(this.initialState);
-        } else {
-          // Res contains formID, Name, and Schema
-          this.setState(Object.assign(this.initialState, res));
-        }
-      });
-      
-    } else { // If a number wasn't passed, treat it is a name searching for forms
-      Meteor.call('searchFormsByName', formState.formID, (err, res) => {
-        if (err) {
-          this.setState(this.initialState);
-          Bert.alert(err.error, 'danger', 'growl-top-right');
-        } else {
-          this.setState({ formData: res, formID: '', schema: this.formSchema, loading: false, total: res.length });
-        }
-      });
-    }
+
+    Meteor.call('searchFormsByName', formState.formID, (err, res) => {
+      if (err) {
+        this.setState(this.initialState);
+        Bert.alert(err.error, 'danger', 'growl-top-right');
+      } else {
+        this.setState({ formData: res, formID: '', schema: this.formSchema, loading: false, total: res.length });
+      }
+    });
+  }
+
+  handleSelect (formState) {
+    console.log('Handle Select');
+    console.log(formState);
+    Meteor.call('getSchemaAndFirstData', formState, (err, res) => {
+      if (err) {
+        Bert.alert(err.error, 'danger', 'growl-top-right');
+        this.setState(this.initialState);
+      } else {
+        // Res contains formID, Name, and Schema
+        this.setState(Object.assign(this.initialState, res));
+      }
+    });
   }
   
   pollData () {
-    if(this.state.formID){
+    const formID = this.state.formID;
+    if(formID){
       console.log('Polling data');
       this.setState({ loading: true });
-      Meteor.call('pollingRefreshData', this.state.formID, (err, res) => {
+      Meteor.call('pollingRefreshData', { formID }, (err, res) => {
         if (err) {
           Bert.alert(err.error, 'danger', 'growl-top-right');
           this.setState({ loading: false });
@@ -78,6 +81,7 @@ export default class TyrionPage extends Component {
             schema={this.state.schema}
             formData={this.state.formData}
             clickFunc={this.handleSubmit}
+            handleSelect={this.handleSelect}
             pollData={this.pollData}
             minDate={this.state.minDate}
             maxDate={this.state.maxDate}

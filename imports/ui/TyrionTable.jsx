@@ -20,8 +20,16 @@ export default class TyrionTable extends Component {
   /////
   //Set the form to display the formID
   onClick (formID) {
+    console.log(formID);
     document.getElementById('formID-field').value = formID;
-    this.props.clickFunc({ formID, minDate: new Date(document.getElementById('minDate-field').value), maxDate: new Date(document.getElementById('maxDate-field').value) });
+    let formState = { formID};
+    if (document.getElementById('minDate-field').value) {
+      formState = Object.assign(formState, { minDate: new Date(document.getElementById('minDate-field').value) })
+    }
+    if (document.getElementById('maxDate-field').value) {
+      formState = Object.assign(formState, { maxDate: new Date(document.getElementById('maxDate-field').value) })
+    }
+    this.props.handleSelect(formState);
   }
 
 
