@@ -2,6 +2,7 @@ import {Meteor} from 'meteor/meteor';
 import { Submissions, Logs } from '../imports/collections.js';
 import fetch from 'node-fetch';
 import { Restivus } from 'meteor/nimble:restivus';
+import { Kadira } from 'meteor/meteorhacks:kadira';
 
 Meteor.startup(() => {
     Submissions._ensureIndex({ formID: 1, submittedAt: 1 });
@@ -21,7 +22,8 @@ Meteor.publish('submissions', (formStatus) => {
     if (minDate || maxDate) {
         query = Object.assign(query, { submittedAt: time });
     }
-    return Submissions.find(query);
+    console.log( query );
+    return Submissions.find(query, {limit: MAX_REQUESTS});
 });
 
 // Use this to get a formID from a form name
@@ -39,21 +41,37 @@ const EloquaOptions = {
         authorization: process.env.AUTHORIZATION,
     },
 };
+const FormSchema = { name: 'Form Name', id: 'Form ID'} ;
+
+const MAX_REQUESTS = 5000;
 
 Meteor.methods({
-    
     logDownload: (stats) => {
         stats.type = 'download';
         stats.date = new Date();
         Logs.insert(stats);
     },
-    /////////
-    // Search Eloqua For Forms
-    // Return a list of found forms with ids and names
-    searchFormsByName: (name) => {
-        Logs.insert({ name, type: 'searchForForms', date: new Date() });
-        console.log(`searchFormsByName: ${name}`);
-        return fetch(`${formsURI}?search=*${name}*`, EloquaOptions)
+
+    // Return a form's schema and data if it is a form
+    // otherwise return a list of possible forms to click on.
+    handleSubmission: (formState) => { // @TODO Limit the number of pages
+        console.log("HANDLE IT!");
+        let { formID, minDate, maxDate } = formState;
+        formState.type = 'formData';
+        formState.date = new Date();
+        Logs.insert(formState);
+        minDate = minDate ? minDate.valueOf() / 1000 : null;
+        maxDate = maxDate ? maxDate.valueOf() / 1000 : null;
+
+        //See if the input is a real formID
+        const formExists = fetch(`${formSchemaURI}${formID}`, EloquaOptions)
+            .then(res => res.json())
+            .catch(err => {
+                return undefined; //throw new Meteor.Error('Form could not be found in Eloqua');
+            });
+
+        // If the input is not a formID, we'll return a list of Forms instead
+        const searchForForms = fetch(`${formsURI}?search=*${formID}*`, EloquaOptions)
             .then(res => res.json())
             .catch(() => {
                 throw new Meteor.Error('URI Endpoint did not return JSON. Are you authorized?')
@@ -64,9 +82,9 @@ Meteor.methods({
                     // If we need more pages, concat those pages into our return array
                     if (parseInt(body.total) > 1000) {
                         const pages = [];
-                        for (let i = 2; i < body.total / 1000; i++) {
+                        for (let i = 1; i < body.total / 1000 && i < (MAX_REQUIESTS / 1000); i++) {
                             pages.push(
-                                fetch(`${formsURI}?search=*${name}*&page=${i}`, EloquaOptions)
+                                fetch(`${formsURI}?search=*${name}*&page=${i+1}`, EloquaOptions)
                                     .then(res => res.json())
                                     .then(body => body.elements.map((element) => ({
                                         id: element.id,
@@ -79,61 +97,112 @@ Meteor.methods({
                             toReturn.concat(i);
                         }
                     }
-
                     return toReturn
-                } else throw new Meteor.Error('No forms found. Try using an ID.');
-            }).await();
+                } else return undefined;
+            });
+
+        //If the form came back, get the data and return the schema
+        const rawSchema = formExists.await();
+        if (rawSchema && rawSchema.type === 'Form') { //Return form Schema and start form data
+            const { total } = Meteor.call('pollingRefreshData', { formID, maxDate, minDate });
+            console.log(total);
+            // Build the schema
+            const schema = {};
+            for (let element of rawSchema.elements) {
+                schema[element.id] = element.name;
+            }
+            return { schema, name: rawSchema.name, formID, maxDate, minDate, total };
+        }
+        // Otherwise, return the list of forms
+        rawFormData = searchForForms.await();
+        if (rawFormData) {
+            return Object.assign(formState, { schema: FormSchema, formData: rawFormData, total: rawFormData.length });
+        } else throw new Meteor.Error('No forms found. Try using an ID.');
+
     },
 
-    ///////////
-    // Given an ID, Search Eloqua for:
-    //     1) The form Schema (and return it as an object)
-    //     2) Insert the initial data into the collection
-    //
-    getSchemaAndFirstData: (input) => {
-        console.log(input);
-        // First, confirm that the form exists
-        // formDataURI:
-        //     elements: [
-        //         id: 'NNNN'
-        //         htmlName: 'SSSS'
-        //         name: 'SSSS'
-        let { formID, minDate, maxDate } = input;
-        input.type = 'formData';
-        input.date = new Date();
-        Logs.insert(input);
-        minDate = minDate ? minDate.valueOf() / 1000 : undefined;
-        maxDate = maxDate ? maxDate.valueOf() / 1000 : undefined;
+    // Return a form's schema and data if it is a form
+    // otherwise return a list of possible forms to click on.
+    handleSubmissionsNoMongo: (formState) => { // @TODO Limit the number of pages
+        // Setup Logging and data
+        console.log("handleSubmissionsNoMongo");
+        logSubmissionData(formState);
+        let { search, minDate, maxDate } = formState;
+        minDate = minDate ? minDate.valueOf() / 1000 : null;
+        maxDate = maxDate ? maxDate.valueOf() / 1000 : null;
 
-        const rawSchema = fetch(`${formSchemaURI}${formID}`, EloquaOptions)
+        //See if the input is a real formID and use this for the schema
+        const formExists = getRawSchema(search);
+
+        // If the input is not a formID, we'll return a list of Forms instead
+        const searchForForms = fetch(`${formsURI}?search=*${search}*`, EloquaOptions)
             .then(res => res.json())
-            .catch(err => {
-                throw new Meteor.Error('Form could not be found in Eloqua');
+            .catch(() => {
+                throw new Meteor.Error('URI Endpoint did not return JSON. Are you authorized? Send a message to Marketing Ops to get this fixed')
             })
-            .await();
-        // Make sure Eloqua gave us a proper form schema
-        if (rawSchema.type !== 'Form') {
-            console.log(JSON.stringify(rawSchema));
-            throw new Meteor.Error('Form could not be processed');
+            .then(body => {
+                if (parseInt(body.total, 10)) {
+                    return body.elements.map((element) => ({ id: element.id, name: element.name }));
+                } else return undefined;
+            });
+
+        // Build form data fetch
+        let query = getFormDataQuery(formState);
+        const formData = getFormData(query);
+
+        //If the form came back, get the data and return the schema
+        const rawSchema = formExists.await();
+        if (rawSchema && rawSchema.type === 'Form') { //Return form Schema and start form data
+            // Build the schema
+            const schema = buildSchema(rawSchema);
+            // If returning form data, return:
+            // from rawSchema: schema, name
+            // from rawData: Form Data, current, total,
+            // fro submission: formID, minDate, maxDate,
+            return Object.assign({
+                schema,
+                search,
+                maxDate,
+                minDate,
+                formID: search,
+                name: rawSchema.name,
+                page: 1 }, formData.await());
         }
+        // Otherwise, return the list of forms
+        // Return a list of forms:
+        // Form Schema
+        // data, current, total
+        rawFormData = searchForForms.await();
+        if (rawFormData) {
+            return Object.assign(formState, { schema: FormSchema, data: rawFormData, total: rawFormData.length });
+        } else throw new Meteor.Error('No forms found. Try using an ID.');
 
+    },
 
-
-        // Start the form data
-        // elements: [
-        //     type: FormData
-        //     id: 'NNNNNNN'
-        //     fieldValues: [
-        //         { type: FieldValue
-        //           id: 'NNNNNNN'}
-        const { total } = Meteor.call('pollingRefreshData', { formID, maxDate, minDate });
-        console.log(total);
-        // Build the schema
-        const schema = {};
-        for (let element of rawSchema.elements) {
-            schema[element.id] = element.name;
+    /////
+    // Call when you are refreshing or when you are clicking on an entry
+    // { formID, minDate, maxDate, page }
+    GetFormData: (formState) => {
+        logSubmissionData(formState);
+        // Build form data fetch query
+        const returnData = getFormData(getFormDataQuery(formState)).await();
+        returnData.page = formState.page;
+        // If the total hasn't changed and we're looking at the last page...
+        if (returnData.total === formState.total && (1000 * (formState.page - 1)) + formState.current === returnData.total) {
+            returnData.data = null;
         }
-        return { schema, name: rawSchema.name, formID, maxDate, minDate, total };
+        return returnData;
+    },
+
+    /////
+    // Call when you click on a searched form
+    // { formID, minDate, maxDate }
+    GetFormDataAndSchema: (formState) => {
+        logSubmissionData({ ...formState });
+        const formData = getFormData(getFormDataQuery(formState));
+        const rawSchema = getRawSchema(formState.search).await();
+        const schema = buildSchema(rawSchema);
+        return Object.assign({ schema, name: rawSchema.name, formID: formState.search }, formData.await(), formState );
     },
 
     ////////
@@ -166,7 +235,7 @@ Meteor.methods({
                 const numPagesToGet = parseInt(body.total, 10) / parseInt(body.pageSize, 10);
                 if (numPagesToGet > 1) {
                     const pagesArray = [];
-                    for (let i = 1; i < numPagesToGet; i++) {
+                    for (let i = 1; i < numPagesToGet && i < MAX_REQUESTS; i++) {
                         pagesArray.push(
                             fetch(`${query}&page=${i + 1}`, EloquaOptions)
                                 .then(res => res.json())
@@ -175,23 +244,90 @@ Meteor.methods({
                         Logs.insert({ query: `${query}&page=${i + 1}`,  date: new Date(), type: 'eloqua' });                    }
                     Promise.all(pagesArray);
                 }
-                return { total: body.total };
+                return { total: body.total < MAX_REQUESTS ? body.total : MAX_REQUESTS };
             }).await();
     }
 });
 
-const getInsertFormDataFunc = Meteor.bindEnvironment(
-    (formID) => {
-        return Meteor.bindEnvironment((element) => {
-            const obj = { formID, submittedAt: parseInt(element.submittedAt, 10) };
-            for (let valueObj of element.fieldValues) {
-                obj[valueObj.id] = valueObj.value;
-            }
-            //console.log(`Inserting Object: ${JSON.stringify(obj)}`);
-            Submissions.upsert(obj, obj);
-        });
+const buildSchema = (rawSchema) => {
+    const schema = {submittedAt: 'Submitted'};
+    for (let element of rawSchema.elements) {
+        if (element.name !== 'Submit') {
+            schema[element.id] = element.name;
+        }
+        schema.submittedAt = 'Submit';
+    }
+    return schema;
+};
+
+// const getInsertFormDataFunc = Meteor.bindEnvironment(
+//     (formID) => {
+//         return Meteor.bindEnvironment((element) => {
+//             const obj = { formID, submittedAt: parseInt(element.submittedAt, 10) };
+//             for (let valueObj of element.fieldValues) {
+//                 obj[valueObj.id] = valueObj.value;
+//             }
+//             //console.log(`Inserting Object: ${JSON.stringify(obj)}`);
+//             Submissions.upsert(obj, obj);
+//         });
+//     }
+// );
+
+const logSubmissionData = Meteor.bindEnvironment((formState) => {
+    formState.type = 'formData';
+    formState.date = new Date();
+    Logs.insert(formState);
+});
+
+const getRawSchema = Meteor.bindEnvironment((search) => fetch(`${formSchemaURI}${search}`, EloquaOptions)
+    .then(res => res.json())
+    .catch(err => {
+        return undefined; //throw new Meteor.Error('Form could not be found in Eloqua');
+    })
+);
+
+const getFormDataQuery = (formState) => {
+    let { search, minDate, maxDate, page } = formState;
+    minDate = minDate ? minDate.valueOf() / 1000 : null;
+    maxDate = maxDate ? maxDate.valueOf() / 1000 : null;
+    let query = `${formDataURI}${search}?`;
+    if (minDate) {
+        query = `${query}&startAt=${minDate}`;
+    }
+    if (maxDate) {
+        query = `${query}&endAt=${maxDate}`;
+    }
+    if (page > 1) {
+        query = `${query}&page=${page}`;
+    }
+    return query;
+};
+
+const getFormData = Meteor.bindEnvironment((query) => {
+    return fetch(query, EloquaOptions)
+            .then(res => res.json())
+            .then(body => {
+                Logs.insert({ query, date: new Date(), type: 'eloqua' });
+                if (!body.elements) {
+                    console.log(JSON.stringify(body));
+                    throw new Meteor.Error('Eloqua Communication Failed');
+                }
+                return {
+                    total: body.total,
+                    data: body.elements.map(element => {
+                        const obj = { id: element.id, submittedAt: new Date(element.submittedAt * 1000).toUTCString() };
+                        for (let valueObj of element.fieldValues) {
+                            obj[valueObj.id] = valueObj.value;
+                        }
+                        return obj;
+                    })
+                }
+            })
     }
 );
+
+
+
 
 
 /////////////
@@ -260,7 +396,8 @@ RESTAPI.addRoute('usageReport', {
     }
 });
 
-
+// Kadira
+Kadira.connect('vm2jwCPPKvNojNTix', '056bf6d8-1305-4a10-b21d-eb51a5168e8a');
 
 
 

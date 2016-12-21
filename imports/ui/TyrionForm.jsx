@@ -4,23 +4,23 @@
 import React, { Component } from 'react';
 import { Bert } from 'meteor/themeteorchef:bert';
 
+// @TODO refactor as stateless function
 export default class TyrionForm extends Component {
   constructor () {
     super();
     this.handleSubmit = this.handleSubmit.bind(this);
     this.handleSubmitOnEnter = this.handleSubmitOnEnter.bind(this);
-    this.state = { FormID: '', minDate: '', maxDate: '' };
+    this.state = {  };
   }
 
 
   handleSubmit (event) {
     event.preventDefault();
-    const formID = document.getElementById('formID-field').value;
+    const search = document.getElementById('formID-field').value;
     const minDate = new Date(document.getElementById('minDate-field').value);
     const maxDate = new Date(document.getElementById('maxDate-field').value);
-    console.log({ formID, minDate, maxDate});
-    if (formID) {
-      this.props.handleSubmit({ formID, minDate, maxDate});
+    if (search) {
+      this.props.handleSubmit({ search, minDate, maxDate});
     } else {
       Bert.alert('Enter Form Name', 'info', 'growl-top-right');
     }
@@ -35,9 +35,23 @@ export default class TyrionForm extends Component {
   }
 
   componentDidMount () {
+    //@TODO use the following options:
+    // min: new Date(2015,10,10),
+    // max: new Date(2016,10,10),
+    // Setup on-change handlers and use the #mindate.stop() and redo #minDate.pickadate()
+    // http://amsul.ca/pickadate.js/date/#limits
+    //new Date(e.target.value)
     $('.datepicker').pickadate({
       selectMonths: true, // Creates a dropdown to control month
-      selectYears: 15 // Creates a dropdown of 15 years to control year
+      selectYears: 10, // Creates a dropdown of 5 years to control year
+      min: [2007,10,10],
+      max: true
+    });
+    $('#minDate-field').change((e) => {
+      $('#maxDate-field').pickadate('picker').set('min', new Date(e.target.value));
+    });
+    $('#maxDate-field').change((e) => {
+      $('#minDate-field').pickadate('picker').set('max', new Date(e.target.value));
     });
   }
 

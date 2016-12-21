@@ -1,22 +1,31 @@
 import React, { Component } from 'react';
 
 export default class StatusBar extends Component {
-
+    // @TODO change to: Loading... , Viewing page 1 of X (NNNNN total submissions)
+    // Loading
+    // Page
+    // Current
+    // Total
     render () {
-        let loading = this.props.loading || this.props.current < this.props.total;
-        let percent = `${Math.round(100 * this.props.current / this.props.total)}%`;
-        const loadingBar = loading
-            ? this.props.loading
+        const totalPages = Math.ceil(this.props.total / 1000);
+        let statusPhrase;
+        if (this.props.total ) {
+            statusPhrase = `Viewing page ${this.props.page} of ${totalPages} (${this.props.total} total submissions)`;
+        } else if (this.props.loading) {
+            statusPhrase = 'Loading...';
+        } else {
+            statusPhrase = 'Waiting for data...';
+        }
+        const loadingBar = this.props.loading
                 ? (<div className="indeterminate"></div>)
-                : (<div className="determinate" style={{ width: percent }}></div>)
-            : null ;
+                : null ;
         return (
         <div className="row" style={{ margin: '0' }}>
-            <div className="progress col s8" style={{ backgroundColor: loading ? '#CAA' : 'transparent' }}>
+            <div className="progress col s12 l6" style={{ backgroundColor: this.props.loading ? '#CAA' : 'transparent' }}>
                 {loadingBar}
             </div>
-            <div className="white-text col s4 right-align">
-                {this.props.current < this.props.total ? `${this.props.current} / ${this.props.total || '0'}` : this.props.current}
+            <div className="white-text col s12 l6 right-align">
+                {statusPhrase}
             </div>
         </div>
     )}

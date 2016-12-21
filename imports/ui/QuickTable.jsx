@@ -28,7 +28,7 @@ export default class QuickTable extends Component {
     mapSubmissions(obj, index) {
         if (this.props.clickFunc) {
             return (
-                <tr key={index}  onClick={this.onClick} className="QuickTable-clickable">
+                <tr key={index}  onClick={this.onClick} className="QuickTable-clickable" style={{height: '50px'}}>
                     {
                         Object.keys(this.props.schema).map(
                             (val, idx) => (<td key={idx} name={obj.id} data-item={obj}>{obj[val]}</td>))
@@ -53,20 +53,37 @@ export default class QuickTable extends Component {
     // http://stackoverflow.com/questions/37071535/position-sticky-firefox-on-a-table-element
     // I chopped out the caption part.
     componentDidMount() {
-        var $win = $(window),
-            $table = $('#QuickTable'),
-            $thead = $table.children('thead'),
-            $tfoot = $table.children('tfoot'),
-            $caption = $table.children('caption'),
-            $cells = $thead.children().children().add($caption);
+        if (this.props.stickyHeaders) {
+            var $win = $(window),
+                $table = $('#QuickTable'),
+                $thead = $table.children('thead'),
+                $tfoot = $table.children('tfoot'),
+                $caption = $table.children('caption'),
+                $cells = $thead.children().children().add($caption);
 
-        $win.on('scroll', function() {
-            var bottom = $table.position().top + $table.height() - $thead.height() - ($tfoot.height() || 0),
-                delta = $win.scrollTop() - $thead.offset().top + $caption.outerHeight(),
+            $win.on('scroll', function () {
+                var bottom = $table.position().top + $table.height() - $thead.height() - ($tfoot.height() || 0),
+                    delta = $win.scrollTop() - $thead.offset().top + $caption.outerHeight(),
                 // include border thickness (minus 2)
-                vertPos = (delta < 0 || delta > bottom ? 0 : delta - 2);
-            $thead.children().children().add($caption).css("transform", "translate(0px," + vertPos + "px)");
-        });
+                    vertPos = (delta < 0 || delta > bottom ? 0 : delta - 2);
+                $thead.children().children().add($caption).css("transform", "translate(0px," + vertPos + "px)");
+            });
+        }
+    }
+
+    // Line height: 55px
+    // lines per page on full screen: 18
+    // $win.on ('scroll')
+    // Keep a scrolling window of 54 elements
+    // first Index = CEIL( $win.scrollTop() / 55 ) - 18   (make it 0 instead of negative)
+    // last index = first + 54
+    // Render:
+    //     Spacer: TR: index * 55px
+    //     displayableChildren:
+    //     Spacer: TR: max - topIndex (or do I not need it)
+
+    renderOnlyHalf() {
+
     }
 
     render() {

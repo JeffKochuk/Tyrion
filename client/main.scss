@@ -119,3 +119,8 @@ th {
     box-shadow: inset 0 0 20px 20px rgba(217,0,0,0.1);
     cursor: pointer;
 }
+tr {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow:ellipsis;
+}
