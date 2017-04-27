@@ -99,6 +99,7 @@ export default class TyrionTable extends Component {
                 id="email-field"
                 type="text"
                 placeholder="Enter Email..."/>
+            <p>Note: This tool only downloads 1,000 rows at a time.</p>
             <button className="btn WBRedBackground waves-effect waves-light white-text" onClick={this.exportCSV}>Export</button>
           </div>
         </div>
